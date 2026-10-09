@@ -1,0 +1,363 @@
+
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Mini Świat 3D</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;overflow:hidden;font-family:Arial,sans-serif;touch-action:none}
+canvas{display:block;touch-action:none}
+button{border:0;border-radius:15px;font-weight:bold;touch-action:manipulation}
+#menu,#pauseScreen{position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:linear-gradient(#38baffbb,#164b86eF);color:white;text-align:center}
+#menu h1{font-size:clamp(38px,9vw,65px);text-shadow:3px 4px #2454a8;margin:0}
+#menu p{padding:0 20px}
+.big{font-size:24px;padding:17px 42px;background:#ffdf35;color:#624800;box-shadow:0 5px #b78b00}
+#hud{position:fixed;top:10px;left:10px;z-index:3;color:white;background:#102e5bd9;padding:10px;border-radius:12px;font-weight:bold;line-height:1.6;pointer-events:none}
+#pause{position:fixed;right:10px;top:10px;z-index:5;padding:13px 17px;background:white;font-size:19px;color:#234}
+#joystick{position:fixed;left:18px;bottom:22px;width:120px;height:120px;border-radius:50%;background:#ffffff55;border:3px solid #ffffffa0;z-index:5;touch-action:none}
+#stick{position:absolute;left:31px;top:31px;width:52px;height:52px;border-radius:50%;background:white;box-shadow:0 3px 8px #0005;pointer-events:none}
+#jump{position:fixed;right:22px;bottom:32px;width:84px;height:84px;border-radius:50%;background:#ffdc31;color:#644900;font-size:16px;z-index:5;box-shadow:0 5px #b18a00}
+#pauseScreen{display:none;background:#092746cc}
+#pauseScreen h2{font-size:36px}
+.secondary{padding:14px 25px;font-size:18px;background:white;color:#183c66}
+#tip{position:fixed;bottom:5px;left:50%;transform:translateX(-50%);z-index:3;color:white;text-shadow:1px 1px 3px #123;font-size:11px;white-space:nowrap;pointer-events:none}
+</style>
+</head>
+<body>
+
+<div id="menu">
+<h1>🌎 MINI ŚWIAT</h1>
+<p>Skacz po platformach, zbieraj monety i odkrywaj świat!</p>
+<button class="big" id="play">▶ GRAJ</button>
+</div>
+
+<div id="hud">🪙 Monety: <span id="score">0</span><br>👆 Przeciągnij ekran, aby obrócić kamerę</div>
+<button id="pause">Ⅱ</button>
+<div id="joystick"><div id="stick"></div></div>
+<button id="jump">SKOK ⬆</button>
+<div id="tip">LEWA: ruch • PRAWY OBSZAR: kamera • SKOK</div>
+
+<div id="pauseScreen">
+<h2>⏸ PAUZA</h2>
+<button class="big" id="resume">▶ WRÓĆ DO GRY</button>
+<button class="secondary" id="home">⌂ MENU START</button>
+</div>
+
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x79d7ff);
+scene.fog=new THREE.Fog(0x79d7ff,65,140);
+
+const camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.1,250);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.6));
+renderer.shadowMap.enabled=true;
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xffffff,0x59724b,2));
+const sun=new THREE.DirectionalLight(0xffffff,2);
+sun.position.set(15,30,12);
+sun.castShadow=true;
+scene.add(sun);
+
+function block(w,h,d,color,x,y,z,parent=scene){
+ const m=new THREE.Mesh(
+  new THREE.BoxGeometry(w,h,d),
+  new THREE.MeshStandardMaterial({color})
+ );
+ m.position.set(x,y,z);
+ m.castShadow=true;
+ m.receiveShadow=true;
+ parent.add(m);
+ return m;
+}
+
+// Platformy z prawdziwymi kolizjami
+const platforms=[];
+function platform(w,h,d,color,x,y,z){
+ const mesh=block(w,h,d,color,x,y,z);
+ platforms.push({
+  mesh,
+  top:y+h/2,
+  x,z,
+  halfW:w/2,
+  halfD:d/2
+ });
+ return mesh;
+}
+
+// Duża wyspa startowa: powierzchnia na wysokości y=0
+platform(60,2,70,0x50bd49,0,-1,-3);
+
+// Stopnie prowadzące coraz wyżej
+platform(6,0.6,6,0xa47a50,0,0.2,-6);
+platform(6,0.6,6,0x48c9ff,0,0.9,-12);
+platform(6,0.6,6,0xffa451,0,1.6,-18);
+platform(6,0.6,6,0xa987ff,0,2.3,-24);
+platform(6,0.6,6,0x55d6a5,0,3,-30);
+platform(7,0.6,7,0xff6f91,3,3.7,-36);
+
+// Drzewa
+function tree(x,z){
+ block(.7,2.6,.7,0x80502c,x,1.3,z);
+ const crown=new THREE.Mesh(
+  new THREE.ConeGeometry(1.7,3.5,7),
+  new THREE.MeshStandardMaterial({color:0x16883b})
+ );
+ crown.position.set(x,3.7,z);
+ scene.add(crown);
+}
+for(let i=0;i<26;i++){
+ const x=Math.random()*48-24;
+ const z=Math.random()*53-28;
+ if(Math.abs(x)<5&&z<2&&z>-39)continue;
+ tree(x,z);
+}
+
+// Klockowa postać. Przód twarzy jest skierowany w stronę +Z.
+const player=new THREE.Group();
+scene.add(player);
+
+block(.9,1.05,.6,0x2675ff,0,1.45,0,player);
+block(.78,.78,.78,0xffc58b,0,2.4,0,player);
+
+// Oczy znajdują się z przodu głowy, po stronie +Z
+block(.15,.15,.07,0x202b3d,-.19,2.47,.405,player);
+block(.15,.15,.07,0x202b3d,.19,2.47,.405,player);
+block(.23,.07,.06,0x9d3737,0,2.22,.415,player);
+
+const legs=[
+ block(.36,.8,.4,0x183e91,-.24,.4,0,player),
+ block(.36,.8,.4,0x183e91,.24,.4,0,player)
+];
+const arms=[
+ block(.3,.8,.35,0xffc58b,-.64,1.5,0,player),
+ block(.3,.8,.35,0xffc58b,.64,1.5,0,player)
+];
+
+player.position.set(0,0,3);
+
+// Monety umieszczone nad platformami
+const coins=[];
+function coin(x,y,z){
+ const c=new THREE.Mesh(
+  new THREE.TorusGeometry(.38,.12,8,16),
+  new THREE.MeshStandardMaterial({color:0xffd000,metalness:.5,roughness:.25})
+ );
+ c.position.set(x,y,z);
+ scene.add(c);
+ coins.push(c);
+}
+coin(2,1,-6);
+coin(-1,2,-12);
+coin(1,2.7,-18);
+coin(-1,3.5,-24);
+coin(1,4.2,-30);
+coin(3,4.8,-36);
+for(let i=0;i<10;i++)coin(Math.random()*16-8,1,Math.random()*25-20);
+
+// Sterowanie
+const keys={};
+addEventListener('keydown',e=>{
+ keys[e.key.toLowerCase()]=true;
+ if(e.code==='Space'){e.preventDefault();jump();}
+});
+addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+
+let started=false,paused=false;
+let vy=0,onGround=true,score=0;
+const gravity=20,jumpPower=8.5;
+
+function jump(){
+ if(started&&!paused&&onGround){
+  vy=jumpPower;
+  onGround=false;
+ }
+}
+document.getElementById('jump').addEventListener('pointerdown',e=>{
+ e.preventDefault();jump();
+});
+
+// Joystick dotykowy
+const joy=document.getElementById('joystick');
+const stick=document.getElementById('stick');
+let joyX=0,joyY=0,joyActive=false;
+
+function updateJoy(e){
+ const r=joy.getBoundingClientRect();
+ let x=e.clientX-(r.left+r.width/2);
+ let y=e.clientY-(r.top+r.height/2);
+ const max=35,len=Math.hypot(x,y);
+ if(len>max){x=x/len*max;y=y/len*max;}
+ joyX=x/max;joyY=y/max;
+ stick.style.left=(34+x)+'px';
+ stick.style.top=(34+y)+'px';
+}
+joy.addEventListener('pointerdown',e=>{
+ joyActive=true;
+ joy.setPointerCapture(e.pointerId);
+ updateJoy(e);
+});
+joy.addEventListener('pointermove',e=>{if(joyActive)updateJoy(e)});
+function stopJoy(){
+ joyActive=false;joyX=0;joyY=0;
+ stick.style.left='31px';stick.style.top='31px';
+}
+joy.addEventListener('pointerup',stopJoy);
+joy.addEventListener('pointercancel',stopJoy);
+
+// Kamera: przesuwaj palcem poza joystickiem i przyciskami
+let yaw=0,pitch=.32,distance=10;
+let cameraPointer=null,lastX=0,lastY=0;
+const jumpBtn=document.getElementById('jump');
+const pauseBtn=document.getElementById('pause');
+
+renderer.domElement.addEventListener('pointerdown',e=>{
+ if(!started||paused)return;
+ cameraPointer=e.pointerId;
+ lastX=e.clientX;lastY=e.clientY;
+ renderer.domElement.setPointerCapture(e.pointerId);
+});
+renderer.domElement.addEventListener('pointermove',e=>{
+ if(e.pointerId!==cameraPointer)return;
+ const dx=e.clientX-lastX,dy=e.clientY-lastY;
+ lastX=e.clientX;lastY=e.clientY;
+ yaw-=dx*.008;
+ pitch=THREE.MathUtils.clamp(pitch+dy*.005,-.15,1.05);
+});
+function endCamera(e){
+ if(e.pointerId===cameraPointer)cameraPointer=null;
+}
+renderer.domElement.addEventListener('pointerup',endCamera);
+renderer.domElement.addEventListener('pointercancel',endCamera);
+
+// Przyciski menu
+document.getElementById('play').onclick=()=>{
+ started=true;paused=false;
+ document.getElementById('menu').style.display='none';
+ document.getElementById('pauseScreen').style.display='none';
+};
+pauseBtn.onclick=()=>{
+ if(!started)return;
+ paused=!paused;
+ document.getElementById('pauseScreen').style.display=paused?'flex':'none';
+};
+document.getElementById('resume').onclick=()=>{
+ paused=false;
+ document.getElementById('pauseScreen').style.display='none';
+};
+document.getElementById('home').onclick=()=>{
+ paused=false;started=false;
+ document.getElementById('pauseScreen').style.display='none';
+ document.getElementById('menu').style.display='flex';
+};
+
+// Kolizje pionowe: lądowanie na powierzchni platform
+function collide(oldY){
+ const radius=.42;
+ if(vy>0)return;
+
+ for(const p of platforms){
+  const insideX=Math.abs(player.position.x-p.x)<p.halfW-radius;
+  const insideZ=Math.abs(player.position.z-p.z)<p.halfD-radius;
+  if(!insideX||!insideZ)continue;
+
+  // Stopy przechodzą przez poziom platformy od góry w dół
+  if(oldY>=p.top-.03 && player.position.y<=p.top){
+   player.position.y=p.top;
+   vy=0;
+   onGround=true;
+   return;
+  }
+ }
+}
+
+const clock=new THREE.Clock();
+const target=new THREE.Vector3();
+
+function animate(){
+ requestAnimationFrame(animate);
+ const dt=Math.min(clock.getDelta(),.035);
+
+ if(started&&!paused){
+  let ix=joyX,iz=joyY;
+  if(keys.w||keys.arrowup)iz-=1;
+  if(keys.s||keys.arrowdown)iz+=1;
+  if(keys.a||keys.arrowleft)ix-=1;
+  if(keys.d||keys.arrowright)ix+=1;
+
+  const len=Math.hypot(ix,iz);
+  if(len>1){ix/=len;iz/=len;}
+
+  // Ruch względem kierunku kamery
+  const mx=ix*Math.cos(yaw)+iz*Math.sin(yaw);
+  const mz=-ix*Math.sin(yaw)+iz*Math.cos(yaw);
+
+  if(Math.abs(ix)+Math.abs(iz)>.05){
+   player.position.x+=mx*7*dt;
+   player.position.z+=mz*7*dt;
+   // Twarz postaci wskazuje kierunek ruchu
+   player.rotation.y=Math.atan2(mx,mz);
+   legs[0].rotation.x=Math.sin(performance.now()*.012)*.5;
+   legs[1].rotation.x=-legs[0].rotation.x;
+   arms[0].rotation.x=-legs[0].rotation.x*.5;
+   arms[1].rotation.x=-legs[1].rotation.x*.5;
+  }else{
+   legs.forEach(l=>l.rotation.x=0);
+   arms.forEach(a=>a.rotation.x=0);
+  }
+
+  const oldY=player.position.y;
+  vy-=gravity*dt;
+  player.position.y+=vy*dt;
+  onGround=false;
+  collide(oldY);
+
+  // Wyjście poza świat: odrodzenie na wyspie
+  if(player.position.y < -12){
+   player.position.set(0,0,3);
+   vy=0;onGround=true;
+   yaw=0;pitch=.32;
+  }
+
+  // Monety
+  for(const c of coins){
+   if(!c.visible)continue;
+   c.rotation.y+=dt*2.5;
+   const dx=c.position.x-player.position.x;
+   const dy=c.position.y-(player.position.y+1.5);
+   const dz=c.position.z-player.position.z;
+   if(Math.hypot(dx,dy,dz)<1.15){
+    c.visible=false;score++;
+    document.getElementById('score').textContent=score;
+   }
+  }
+ }
+
+ // Kamera obraca się wokół postaci
+ const horizontal=distance*Math.cos(pitch);
+ target.set(
+  player.position.x+Math.sin(yaw)*horizontal,
+  player.position.y+2+distance*Math.sin(pitch),
+  player.position.z+Math.cos(yaw)*horizontal
+ );
+ camera.position.lerp(target,.16);
+ camera.lookAt(player.position.x,player.position.y+1.3,player.position.z);
+ renderer.render(scene,camera);
+}
+camera.position.set(0,7,14);
+animate();
+
+addEventListener('resize',()=>{
+ camera.aspect=innerWidth/innerHeight;
+ camera.updateProjectionMatrix();
+ renderer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>
